@@ -114,7 +114,7 @@ def fetch_and_filter_free_proxies():
     print(f"[+] Filtering mukammal! Kul {len(working_proxies)} zinda aur fast proxies tayyar hain.")
     return working_proxies
 
-async def worker(worker_id, queue, browser, wait_time, proxy_list, is_paid, paid_proxy_config):
+async def worker(worker_id, queue, browser, wait_time, proxy_list):
     while not queue.empty():
         try:
             task_data = await queue.get()
@@ -135,9 +135,8 @@ async def worker(worker_id, queue, browser, wait_time, proxy_list, is_paid, paid
             "timezone_id": "America/New_York"
         }
 
-        if is_paid and paid_proxy_config:
-            context_args["proxy"] = paid_proxy_config
-        elif not is_paid and proxy_list:
+        # Sirf free tested proxies mein se random select hoga
+        if proxy_list:
             chosen_proxy = random.choice(proxy_list)
             context_args["proxy"] = {"server": f"http://{chosen_proxy}"}
 
@@ -216,19 +215,12 @@ async def worker(worker_id, queue, browser, wait_time, proxy_list, is_paid, paid
 
 async def main():
     print("==========================================")
-    print("  PLAYWRIGHT 50-WORKERS + PROXY FILTER   ")
+    print("  PLAYWRIGHT 50-WORKERS FREE PROXY BOT   ")
     print("==========================================")
 
     total_tasks = int(os.getenv("TOTAL_TASKS", "50"))
     concurrent_workers = int(os.getenv("CONCURRENT_WORKERS", "50"))
     wait_time = int(os.getenv("WAIT_TIME", "5"))
-    
-    proxy_choice = os.getenv("PROXY_CHOICE", "y").lower()
-    proxy_type = os.getenv("PROXY_TYPE", "free").lower()
-    
-    is_paid = False
-    paid_proxy_config = None
-    proxy_list = []
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -242,33 +234,39 @@ async def main():
             ]
         )
 
+        batch_number = 1
         try:
-            print(f"\n==========================================")
-            print(f"      BOT 50 WORKERS KE SATH START       ")
-            print(f"==========================================")
+            while True:
+                print(f"\n==========================================")
+                print(f"      BATCH #{batch_number} START HO RAHA HAI")
+                print(f"==========================================")
 
-            if proxy_choice == 'y' and proxy_type == 'free':
+                # Direct har batch ke shuru mein fresh free proxies fetch aur test hongi
                 proxy_list = fetch_and_filter_free_proxies()
                 if not proxy_list:
                     print("[!] Koi bhi live proxy nahi mili, bina proxy ke chalaya ja raha hai.")
 
-            queue = asyncio.Queue()
-            for i in range(total_tasks):
-                queue.put_nowait({"id": i + 1, "retries": 3})
+                queue = asyncio.Queue()
+                for i in range(total_tasks):
+                    queue.put_nowait({"id": i + 1, "retries": 3})
 
-            workers = [
-                asyncio.create_task(
-                    worker(i + 1, queue, browser, wait_time, proxy_list, is_paid, paid_proxy_config)
-                )
-                for i in range(concurrent_workers)
-            ]
+                workers = [
+                    asyncio.create_task(
+                        worker(i + 1, queue, browser, wait_time, proxy_list)
+                    )
+                    for i in range(concurrent_workers)
+                ]
 
-            await queue.join()
+                await queue.join()
 
-            for w in workers:
-                w.cancel()
+                for w in workers:
+                    w.cancel()
 
-            print(f"\n[✓] Tamam 50 workers ke tasks mukammal ho gaye hain!")
+                print(f"\n[✓] Batch #{batch_number} mukammal ho gaya!")
+                batch_number += 1
+
+                print(f"[⌛] Agla batch 15 seconds mein shuru hoga...")
+                await asyncio.sleep(15)
 
         except Exception as e:
             print(f"\n[!] Error: {e}")
